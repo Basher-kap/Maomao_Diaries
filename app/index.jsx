@@ -173,6 +173,14 @@ export default function Home() {
           </View>
 
           {/* Quick Actions */}
+          <Link href="/calendar" asChild>
+            <TouchableOpacity style={styles.calendarButton} activeOpacity={0.85}>
+              <Ionicons name="calendar" size={24} color="#fff" />
+              <Text style={styles.calendarButtonText}>Open Diary Calendar</Text>
+              <Ionicons name="chevron-forward" size={20} color="#fff" />
+            </TouchableOpacity>
+          </Link>
+
           <View style={styles.actionsSection}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             
@@ -268,6 +276,23 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
+  calendarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#6B8E4E',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  calendarButtonText: {
+    flex: 1,
+    marginLeft: 12,
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
   container: {
     flex: 1,
     backgroundColor: '#F5EFE6',
