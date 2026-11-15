@@ -1,4 +1,6 @@
-// app/calendar.jsx
+// app/calendar.jsx — Calendar page.
+// Tap a day, write a note on it. Notes are filed in the month's section, so the
+// dashboard, sidebar sections, backup and AI search all see them.
 import { useMemo, useState } from 'react';
 import {
   StyleSheet,
@@ -10,6 +12,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import NoteEditor from '../components/NoteEditor';
 import { useDiaryCalendar } from '../hooks/useDiaryCalendar';
 import {
   MONTH_NAMES,
@@ -19,25 +22,31 @@ import {
   formatLongDate,
 } from '../utils/diaryDates';
 
-export default function DiaryCalendar() {
-  const router = useRouter();
-  const { entriesByDay, totalEntries, isLoading } = useDiaryCalendar();
+const cleanPreview = (text) =>
+  text.replace(/⟦img:[^⟧]+⟧/g, '').replace(/\s+/g, ' ').trim();
 
-  const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
-  const [selectedKey, setSelectedKey] = useState(toDateKey(today));
+export default function CalendarPage() {
+  const router = useRouter();
+  const { entriesByDay, totalEntries, isLoading, addNote, updateNote, deleteNote } =
+    useDiaryCalendar();
+
+  const now = new Date();
+  const todayKey = toDateKey(now);
+  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const [viewMonth, setViewMonth] = useState(now.getMonth());
+  const [selectedKey, setSelectedKey] = useState(todayKey);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState(null);
 
   const cells = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
-
-  const monthEntryCount = useMemo(
-    () =>
-      cells.reduce(
-        (sum, date) => sum + (date ? (entriesByDay[toDateKey(date)] || []).length : 0),
-        0
-      ),
+  const monthCount = useMemo(
+    () => cells.reduce((n, d) => n + (d ? (entriesByDay[toDateKey(d)] || []).length : 0), 0),
     [cells, entriesByDay]
   );
+
+  const [sy, sm, sd] = selectedKey.split('-').map(Number);
+  const selectedDate = new Date(sy, sm - 1, sd);
+  const selectedEntries = entriesByDay[selectedKey] || [];
 
   const goToMonth = (delta) => {
     const next = new Date(viewYear, viewMonth + delta, 1);
@@ -46,28 +55,55 @@ export default function DiaryCalendar() {
   };
 
   const goToToday = () => {
-    const now = new Date();
-    setViewYear(now.getFullYear());
-    setViewMonth(now.getMonth());
-    setSelectedKey(toDateKey(now));
+    const t = new Date();
+    setViewYear(t.getFullYear());
+    setViewMonth(t.getMonth());
+    setSelectedKey(toDateKey(t));
   };
 
-  const todayKey = toDateKey(today);
-  const selectedEntries = entriesByDay[selectedKey] || [];
-  const [sy, sm, sd] = selectedKey.split('-').map(Number);
-  const selectedDate = new Date(sy, sm - 1, sd);
+  const openNew = () => {
+    setEditingNote(null);
+    setEditorOpen(true);
+  };
 
-  const openEntry = (section) => router.push(`/diary/${encodeURIComponent(section)}`);
+  const onEntryPress = (entry) => {
+    // Entries with photos use the full section editor so images stay intact
+    if (entry.imageCount > 0) {
+      router.push(`/diary/${encodeURIComponent(entry.section)}`);
+      return;
+    }
+    setEditingNote(entry);
+    setEditorOpen(true);
+  };
 
-  const preview = (text) =>
-    text
-      .replace(/⟦img:[^⟧]+⟧/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+  const handleSave = async (text, when) => {
+    try {
+      if (editingNote) {
+        await updateNote(editingNote.section, editingNote.id, text, when);
+      } else {
+        await addNote(when, text);
+      }
+      setEditorOpen(false);
+    } catch (e) {
+      console.error('Error saving note:', e);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editingNote) return;
+    try {
+      await deleteNote(editingNote.section, editingNote.id);
+      setEditorOpen(false);
+    } catch (e) {
+      console.error('Error deleting note:', e);
+    }
+  };
+
+  const isViewingElsewhere =
+    selectedKey !== todayKey || viewYear !== now.getFullYear() || viewMonth !== now.getMonth();
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={26} color="#7B5E7B" />
@@ -76,162 +112,176 @@ export default function DiaryCalendar() {
           <Ionicons name="calendar" size={24} color="#6B8E4E" />
           <Text style={styles.headerTitle}>Diary Calendar</Text>
         </View>
-        <TouchableOpacity onPress={goToToday} style={styles.todayButton}>
-          <Text style={styles.todayButtonText}>Today</Text>
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
       </View>
 
-      {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#6B8E4E" />
-        </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          {/* Month switcher */}
-          <View style={styles.monthRow}>
-            <TouchableOpacity onPress={() => goToMonth(-1)} style={styles.iconButton}>
-              <Ionicons name="chevron-back" size={24} color="#7B5E7B" />
-            </TouchableOpacity>
-            <View style={styles.monthTitleBox}>
-              <Text style={styles.monthTitle}>
-                {MONTH_NAMES[viewMonth]} {viewYear}
-              </Text>
-              <Text style={styles.monthSub}>
-                {monthEntryCount} {monthEntryCount === 1 ? 'entry' : 'entries'} this month
-                {' · '}
-                {totalEntries} total
-              </Text>
-            </View>
-            <TouchableOpacity onPress={() => goToMonth(1)} style={styles.iconButton}>
-              <Ionicons name="chevron-forward" size={24} color="#7B5E7B" />
-            </TouchableOpacity>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+
+        {/* Month switcher */}
+        <View style={styles.monthRow}>
+          <TouchableOpacity onPress={() => goToMonth(-1)} style={styles.iconButton}>
+            <Ionicons name="chevron-back" size={26} color="#7B5E7B" />
+          </TouchableOpacity>
+          <View style={styles.monthTitleBox}>
+            <Text style={styles.monthTitle}>
+              {MONTH_NAMES[viewMonth]} {viewYear}
+            </Text>
+            <Text style={styles.monthSub}>
+              {monthCount} {monthCount === 1 ? 'note' : 'notes'} this month · {totalEntries} total
+            </Text>
           </View>
+          <TouchableOpacity onPress={() => goToMonth(1)} style={styles.iconButton}>
+            <Ionicons name="chevron-forward" size={26} color="#7B5E7B" />
+          </TouchableOpacity>
+        </View>
 
-          {/* Calendar grid */}
-          <View style={styles.card}>
-            <View style={styles.weekRow}>
-              {WEEKDAY_SHORT.map((d) => (
-                <Text key={d} style={styles.weekday}>
-                  {d}
-                </Text>
-              ))}
-            </View>
+        {isViewingElsewhere && (
+          <TouchableOpacity onPress={goToToday} style={styles.todayPill}>
+            <Ionicons name="today-outline" size={14} color="#fff" />
+            <Text style={styles.todayPillText}>Back to today</Text>
+          </TouchableOpacity>
+        )}
 
-            <View style={styles.grid}>
-              {cells.map((date, i) => {
-                if (!date) return <View key={`e${i}`} style={styles.cell} />;
-
-                const key = toDateKey(date);
-                const count = (entriesByDay[key] || []).length;
-                const isSelected = key === selectedKey;
-                const isToday = key === todayKey;
-
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    style={styles.cell}
-                    activeOpacity={0.7}
-                    onPress={() => setSelectedKey(key)}
+        {/* Calendar grid */}
+        <View style={styles.card}>
+          <View style={styles.weekRow}>
+            {WEEKDAY_SHORT.map((d) => (
+              <Text key={d} style={styles.weekday}>{d}</Text>
+            ))}
+          </View>
+          <View style={styles.grid}>
+            {cells.map((date, i) => {
+              if (!date) return <View key={`e${i}`} style={styles.cell} />;
+              const key = toDateKey(date);
+              const count = (entriesByDay[key] || []).length;
+              const isSelected = key === selectedKey;
+              const isToday = key === todayKey;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={styles.cell}
+                  activeOpacity={0.7}
+                  onPress={() => setSelectedKey(key)}
+                >
+                  <View
+                    style={[
+                      styles.dayCircle,
+                      isToday && styles.dayCircleToday,
+                      isSelected && styles.dayCircleSelected,
+                    ]}
                   >
-                    <View
+                    <Text
                       style={[
-                        styles.dayCircle,
-                        isToday && styles.dayCircleToday,
-                        isSelected && styles.dayCircleSelected,
+                        styles.dayText,
+                        isToday && styles.dayTextToday,
+                        isSelected && styles.dayTextSelected,
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.dayText,
-                          isToday && styles.dayTextToday,
-                          isSelected && styles.dayTextSelected,
-                        ]}
-                      >
-                        {date.getDate()}
-                      </Text>
-                    </View>
-                    <View style={styles.dotRow}>
-                      {Array.from({ length: Math.min(count, 3) }).map((_, n) => (
-                        <View key={n} style={styles.dot} />
-                      ))}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Selected day */}
-          <Text style={styles.dayHeading}>{formatLongDate(selectedDate)}</Text>
-
-          {selectedEntries.length === 0 ? (
-            <View style={styles.emptyDay}>
-              <Ionicons name="leaf-outline" size={32} color="#B8A5B8" />
-              <Text style={styles.emptyText}>No diary entries on this day</Text>
-            </View>
-          ) : (
-            selectedEntries.map((entry) => (
-              <TouchableOpacity
-                key={`${entry.section}-${entry.id}`}
-                style={styles.entryCard}
-                activeOpacity={0.8}
-                onPress={() => openEntry(entry.section)}
-              >
-                <View style={styles.timeColumn}>
-                  <Text style={styles.timeText}>{entry.time}</Text>
-                </View>
-                <View style={styles.entryBody}>
-                  <View style={styles.sectionTag}>
-                    <Ionicons name="leaf" size={12} color="#6B8E4E" />
-                    <Text style={styles.sectionTagText} numberOfLines={1}>
-                      {entry.section.trim()}
+                      {date.getDate()}
                     </Text>
-                    {entry.imageCount > 0 && (
-                      <>
-                        <Ionicons name="image" size={12} color="#7B5E7B" style={{ marginLeft: 8 }} />
-                        <Text style={styles.imageCount}>{entry.imageCount}</Text>
-                      </>
-                    )}
                   </View>
-                  <Text style={styles.entryText} numberOfLines={3}>
-                    {preview(entry.text) || '(empty entry)'}
+                  <View style={styles.dotRow}>
+                    {Array.from({ length: Math.min(count, 3) }).map((_, n) => (
+                      <View key={n} style={styles.dot} />
+                    ))}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {isLoading && <ActivityIndicator style={styles.loading} color="#6B8E4E" />}
+        </View>
+
+        {/* Selected day */}
+        <View style={styles.dayHeaderRow}>
+          <Text style={styles.dayHeading}>{formatLongDate(selectedDate)}</Text>
+          <TouchableOpacity style={styles.addButton} onPress={openNew} activeOpacity={0.85}>
+            <Ionicons name="add" size={20} color="#fff" />
+            <Text style={styles.addButtonText}>Add note</Text>
+          </TouchableOpacity>
+        </View>
+
+        {selectedEntries.length === 0 ? (
+          <TouchableOpacity style={styles.emptyDay} onPress={openNew} activeOpacity={0.7}>
+            <Ionicons name="create-outline" size={30} color="#B8A5B8" />
+            <Text style={styles.emptyText}>Nothing written yet. Tap to add a note for this day.</Text>
+          </TouchableOpacity>
+        ) : (
+          selectedEntries.map((entry) => (
+            <TouchableOpacity
+              key={`${entry.section}-${entry.id}`}
+              style={styles.entryCard}
+              activeOpacity={0.8}
+              onPress={() => onEntryPress(entry)}
+            >
+              <View style={styles.timeColumn}>
+                <Text style={styles.timeText}>{entry.time}</Text>
+              </View>
+              <View style={styles.entryBody}>
+                <View style={styles.sectionTag}>
+                  <Ionicons name="leaf" size={12} color="#6B8E4E" />
+                  <Text style={styles.sectionTagText} numberOfLines={1}>
+                    {entry.section.trim()}
                   </Text>
+                  {entry.imageCount > 0 && (
+                    <>
+                      <Ionicons name="image" size={12} color="#7B5E7B" style={{ marginLeft: 8 }} />
+                      <Text style={styles.imageCount}>{entry.imageCount}</Text>
+                    </>
+                  )}
                 </View>
-              </TouchableOpacity>
-            ))
-          )}
-        </ScrollView>
-      )}
+                <Text style={styles.entryText} numberOfLines={4}>
+                  {cleanPreview(entry.text) || '(empty entry)'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+
+      <NoteEditor
+        visible={editorOpen}
+        day={selectedDate}
+        note={editingNote}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        onClose={() => setEditorOpen(false)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5EFE6' },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 48,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
   },
-  iconButton: { padding: 8 },
   headerTitleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerTitle: { fontSize: 20, fontWeight: '700', color: '#4A403A' },
-  todayButton: {
-    backgroundColor: '#6B8E4E',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 16,
-  },
-  todayButtonText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  scrollContent: { padding: 16, paddingBottom: 48 },
-  monthRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  headerSpacer: { width: 42 },
+  scrollContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 60 },
+  iconButton: { padding: 8 },
+  monthRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   monthTitleBox: { flex: 1, alignItems: 'center' },
   monthTitle: { fontSize: 22, fontWeight: '700', color: '#4A403A' },
   monthSub: { fontSize: 12, color: '#8B8680', marginTop: 2 },
+  todayPill: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#D4A574',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginBottom: 10,
+  },
+  todayPillText: { color: '#fff', fontWeight: '600', fontSize: 12 },
   card: {
     backgroundColor: '#fff',
     borderRadius: 20,
@@ -252,13 +302,7 @@ const styles = StyleSheet.create({
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: `${100 / 7}%`, height: 52, alignItems: 'center', justifyContent: 'center' },
-  dayCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  dayCircle: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   dayCircleToday: { borderWidth: 1.5, borderColor: '#D4A574' },
   dayCircleSelected: { backgroundColor: '#6B8E4E', borderColor: '#6B8E4E' },
   dayText: { fontSize: 15, color: '#4A403A' },
@@ -266,15 +310,37 @@ const styles = StyleSheet.create({
   dayTextSelected: { color: '#fff', fontWeight: '700' },
   dotRow: { flexDirection: 'row', gap: 3, height: 6, marginTop: 2 },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#7B5E7B' },
-  dayHeading: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#4A403A',
+  loading: { position: 'absolute', top: 8, right: 12 },
+  dayHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 22,
     marginBottom: 10,
   },
-  emptyDay: { alignItems: 'center', paddingVertical: 28, gap: 8 },
-  emptyText: { color: '#8B8680', fontSize: 14 },
+  dayHeading: { flex: 1, fontSize: 16, fontWeight: '700', color: '#4A403A', paddingRight: 8 },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6B8E4E',
+    paddingLeft: 10,
+    paddingRight: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    gap: 2,
+  },
+  addButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  emptyDay: {
+    alignItems: 'center',
+    paddingVertical: 26,
+    paddingHorizontal: 24,
+    gap: 8,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#D9CFE0',
+    borderRadius: 16,
+  },
+  emptyText: { color: '#8B8680', fontSize: 14, textAlign: 'center' },
   entryCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',

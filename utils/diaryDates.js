@@ -79,3 +79,41 @@ export const buildMonthGrid = (year, month) => {
   while (cells.length % 7 !== 0) cells.push(null);
   return cells;
 };
+
+// "11/15/2026, 9:05:30 PM" — same shape the app has always saved in createdAt,
+// but built by hand so it never depends on the phone's language settings.
+export const formatLocaleString = (date) => {
+  let h = date.getHours();
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}, ${h}:${pad(date.getMinutes())}:${pad(date.getSeconds())} ${suffix}`;
+};
+
+// Notes written on the calendar are filed in the month section ("November 2026"),
+// matching how the existing diary is organised.
+export const monthSectionName = (date) =>
+  `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+
+// Same day as `day`, with the given 24h clock time
+export const withTime = (day, hour24, minute, second = 0) =>
+  new Date(day.getFullYear(), day.getMonth(), day.getDate(), hour24, minute, second);
+
+// Consecutive days with at least one entry, counting back from today.
+// If nothing is written today yet, the streak is still alive from yesterday.
+export const computeStreak = (entriesByDay, today = new Date()) => {
+  const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (!(entriesByDay[toDateKey(day)] || []).length) day.setDate(day.getDate() - 1);
+  let streak = 0;
+  while ((entriesByDay[toDateKey(day)] || []).length) {
+    streak += 1;
+    day.setDate(day.getDate() - 1);
+  }
+  return streak;
+};
+
+// The last `n` days ending today, oldest first: [{ key, label, isToday }]
+export const lastNDays = (n, today = new Date()) =>
+  Array.from({ length: n }, (_, i) => {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (n - 1 - i));
+    return { key: toDateKey(d), label: WEEKDAY_SHORT[d.getDay()].slice(0, 1), isToday: i === n - 1 };
+  });

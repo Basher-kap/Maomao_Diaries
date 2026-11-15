@@ -1,20 +1,22 @@
 //app/index.jsx
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Animated } from 'react-native';
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Link } from 'expo-router';
+import { Link, useFocusEffect } from 'expo-router';
 import { useObserve } from 'expo-observe';
 import Sidebar from '../components/Sidebar';
 import BackupButton from '../components/BackupButton';
 import AISearch from '../components/AISearch';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDiarySections } from '../hooks/useDiaryStorage';
+import { useDiaryCalendar } from '../hooks/useDiaryCalendar';
+import { toDateKey, computeStreak, lastNDays } from '../utils/diaryDates';
 import { getRandomQuote } from '../utils/maomaoQuotes';
 
 export default function Home() {
   const sidebarRefreshRef = useRef(null);
-  const { sections } = useDiarySections();
-  const [totalItems, setTotalItems] = useState(0);
+  const { sections, refreshSections } = useDiarySections();
+  // Reloads on every focus, so notes added on the calendar page show up here
+  const { entriesByDay, totalEntries, refresh: refreshCalendar } = useDiaryCalendar();
   const [greeting, setGreeting] = useState('');
   const [currentQuote, setCurrentQuote] = useState({ text: '', context: '' });
   const { markInteractive } = useObserve();
@@ -23,25 +25,21 @@ export default function Home() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
 
-  // Load total diary item count across all sections
-  useEffect(() => {
-    const loadTotalItems = async () => {
-      try {
-        let total = 0;
-        for (const section of sections) {
-          const stored = await AsyncStorage.getItem(`@diary_items_${section}`);
-          if (stored) {
-            const parsed = JSON.parse(stored);
-            total += parsed.length;
-          }
-        }
-        setTotalItems(total);
-      } catch (e) {
-        console.error('Error counting diary items:', e);
-      }
-    };
-    loadTotalItems();
-  }, [sections]);
+  useFocusEffect(
+    useCallback(() => {
+      refreshSections();
+    }, [refreshSections])
+  );
+
+  const todayKey = toDateKey(new Date());
+  const todayCount = (entriesByDay[todayKey] || []).length;
+  const monthPrefix = todayKey.slice(0, 7);
+  const monthCount = Object.keys(entriesByDay)
+    .filter((k) => k.startsWith(monthPrefix))
+    .reduce((n, k) => n + entriesByDay[k].length, 0);
+  const streak = computeStreak(entriesByDay);
+  const week = lastNDays(7).map((d) => ({ ...d, count: (entriesByDay[d.key] || []).length }));
+  const weekMax = Math.max(1, ...week.map((d) => d.count));
 
   useEffect(() => {
     // Set greeting based on time of day
@@ -76,6 +74,8 @@ export default function Home() {
     if (sidebarRefreshRef.current) {
       await sidebarRefreshRef.current();
     }
+    await refreshSections();
+    await refreshCalendar();
   };
 
   const refreshQuote = () => {
@@ -141,8 +141,44 @@ export default function Home() {
               <View style={[styles.statIconCircle, { backgroundColor: '#E8F5E9' }]}>
                 <Ionicons name="book" size={28} color="#6B8E4E" />
               </View>
-              <Text style={styles.statNumber}>{totalItems}</Text>
+              <Text style={styles.statNumber}>{totalEntries}</Text>
               <Text style={styles.statLabel}>Diaries</Text>
+            </View>
+          </View>
+
+          {/* Pulse: quick summary that updates as you write */}
+          <View style={styles.pulseRow}>
+            <View style={styles.pulseCard}>
+              <Text style={styles.pulseNumber}>{todayCount}</Text>
+              <Text style={styles.pulseLabel}>Today</Text>
+            </View>
+            <View style={styles.pulseCard}>
+              <Text style={styles.pulseNumber}>{monthCount}</Text>
+              <Text style={styles.pulseLabel}>This month</Text>
+            </View>
+            <View style={styles.pulseCard}>
+              <Text style={styles.pulseNumber}>{streak}</Text>
+              <Text style={styles.pulseLabel}>Day streak</Text>
+            </View>
+          </View>
+
+          <View style={styles.weekCard}>
+            <Text style={styles.weekTitle}>Last 7 days</Text>
+            <View style={styles.weekBars}>
+              {week.map((d) => (
+                <View key={d.key} style={styles.weekCol}>
+                  <View style={styles.weekBarTrack}>
+                    <View
+                      style={[
+                        styles.weekBar,
+                        { height: d.count ? 12 + (d.count / weekMax) * 48 : 4 },
+                        d.count === 0 && styles.weekBarEmpty,
+                      ]}
+                    />
+                  </View>
+                  <Text style={[styles.weekLabel, d.isToday && styles.weekLabelToday]}>{d.label}</Text>
+                </View>
+              ))}
             </View>
           </View>
 
@@ -176,7 +212,14 @@ export default function Home() {
           <Link href="/calendar" asChild>
             <TouchableOpacity style={styles.calendarButton} activeOpacity={0.85}>
               <Ionicons name="calendar" size={24} color="#fff" />
-              <Text style={styles.calendarButtonText}>Open Diary Calendar</Text>
+              <View style={styles.calendarButtonTextBox}>
+                <Text style={styles.calendarButtonText}>Open Diary Calendar</Text>
+                <Text style={styles.calendarButtonSub}>
+                  {todayCount > 0
+                    ? `${todayCount} ${todayCount === 1 ? 'note' : 'notes'} written today`
+                    : 'Nothing written today yet'}
+                </Text>
+              </View>
               <Ionicons name="chevron-forward" size={20} color="#fff" />
             </TouchableOpacity>
           </Link>
@@ -268,7 +311,13 @@ export default function Home() {
         </Animated.View>
       </ScrollView>
 
-      <Sidebar refreshRef={sidebarRefreshRef} />
+      <Sidebar
+        refreshRef={sidebarRefreshRef}
+        onSectionsChanged={() => {
+          refreshSections();
+          refreshCalendar();
+        }}
+      />
       <BackupButton onDataRefresh={handleDataRefresh} />
       <AISearch sections={sections} />
     </View>
@@ -286,9 +335,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginBottom: 20,
   },
-  calendarButtonText: {
+  calendarButtonTextBox: { flex: 1, marginLeft: 12 },
+  calendarButtonSub: { color: '#E8F5E9', fontSize: 12, marginTop: 2 },
+  pulseRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
+  pulseCard: {
     flex: 1,
-    marginLeft: 12,
+    backgroundColor: 'white',
+    borderRadius: 20,
+    paddingVertical: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#EDE7F6',
+  },
+  pulseNumber: { fontSize: 26, fontWeight: 'bold', color: '#7B5E7B' },
+  pulseLabel: { fontSize: 12, color: '#8B8680', fontWeight: '600', marginTop: 2 },
+  weekCard: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 18,
+    marginBottom: 32,
+    borderWidth: 2,
+    borderColor: '#E8F5E9',
+  },
+  weekTitle: { fontSize: 14, fontWeight: '700', color: '#4A403A', marginBottom: 12 },
+  weekBars: { flexDirection: 'row', justifyContent: 'space-between' },
+  weekCol: { flex: 1, alignItems: 'center' },
+  weekBarTrack: { height: 64, justifyContent: 'flex-end' },
+  weekBar: { width: 18, borderRadius: 9, backgroundColor: '#6B8E4E' },
+  weekBarEmpty: { backgroundColor: '#E5E0D8' },
+  weekLabel: { fontSize: 12, color: '#8B8680', marginTop: 6 },
+  weekLabelToday: { color: '#6B8E4E', fontWeight: '700' },
+  calendarButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',

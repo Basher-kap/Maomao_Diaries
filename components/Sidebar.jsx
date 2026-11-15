@@ -20,7 +20,7 @@ import { useDiarySections } from '../hooks/useDiaryStorage';
 
 const SIDEBAR_WIDTH = 280;
 
-const Sidebar = ({ refreshRef }) => {
+const Sidebar = ({ refreshRef, onSectionsChanged }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [sectionText, setSectionText] = useState('');
   const [selectedSection, setSelectedSection] = useState(null);
@@ -83,6 +83,7 @@ const Sidebar = ({ refreshRef }) => {
     if (renameText.trim() && renameText !== selectedSection) {
       try {
         await renameSection(selectedSection, renameText);
+        if (onSectionsChanged) onSectionsChanged();
         setIsRenameModalVisible(false);
         setRenameText('');
         setSelectedSection(null);
@@ -118,6 +119,7 @@ const Sidebar = ({ refreshRef }) => {
             try {
               const sectionToDelete = selectedSection;
               await deleteSection(selectedSection);
+              if (onSectionsChanged) onSectionsChanged();
               setSelectedSection(null);
               Alert.alert('Deleted', `Section "${sectionToDelete}" has been deleted.`);
             } catch (error) {

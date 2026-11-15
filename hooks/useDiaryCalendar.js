@@ -7,6 +7,8 @@ import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from './useDiaryStorage';
 import { getEntryDate, toDateKey, formatTime } from '../utils/diaryDates';
+import { addCalendarNote, updateCalendarNote, deleteCalendarNote } from '../utils/calendarNotes';
+import { Observe } from 'expo-observe';
 
 export const useDiaryCalendar = () => {
   const [entriesByDay, setEntriesByDay] = useState({});
@@ -67,5 +69,23 @@ export const useDiaryCalendar = () => {
     }, [load])
   );
 
-  return { entriesByDay, totalEntries, isLoading, refresh: load };
+  const addNote = async (when, text) => {
+    const { section } = await addCalendarNote(AsyncStorage, when, text);
+    Observe.logEvent('diary.entry_created', { attributes: { section, source: 'calendar' } });
+    await load();
+  };
+
+  const updateNote = async (section, id, text, when) => {
+    await updateCalendarNote(AsyncStorage, section, id, text, when);
+    Observe.logEvent('diary.entry_updated', { attributes: { section, source: 'calendar' } });
+    await load();
+  };
+
+  const deleteNote = async (section, id) => {
+    await deleteCalendarNote(AsyncStorage, section, id);
+    Observe.logEvent('diary.entry_deleted', { attributes: { section, source: 'calendar' } });
+    await load();
+  };
+
+  return { entriesByDay, totalEntries, isLoading, refresh: load, addNote, updateNote, deleteNote };
 };
