@@ -256,21 +256,6 @@ export default function Home() {
           </View>
 
           {/* Quick Actions */}
-          <Link href="/calendar" asChild>
-            <TouchableOpacity style={styles.calendarButton} activeOpacity={0.85}>
-              <Ionicons name="calendar" size={24} color="#fff" />
-              <View style={styles.calendarButtonTextBox}>
-                <Text style={styles.calendarButtonText}>Open Diary Calendar</Text>
-                <Text style={styles.calendarButtonSub}>
-                  {todayCount > 0
-                    ? `${todayCount} ${todayCount === 1 ? 'note' : 'notes'} written today`
-                    : 'Nothing written today yet'}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#fff" />
-            </TouchableOpacity>
-          </Link>
-
           <View style={styles.actionsSection}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             
@@ -358,6 +343,22 @@ export default function Home() {
         </Animated.View>
       </ScrollView>
 
+      {/* Floating calendar bubble (sits under the Menu bubble) */}
+      <Link href="/calendar" asChild>
+        <TouchableOpacity
+          style={styles.calendarBubble}
+          activeOpacity={0.85}
+          accessibilityLabel="Open Diary Calendar"
+        >
+          <Ionicons name="calendar" size={26} color="#fff" />
+          {todayCount > 0 && (
+            <View style={styles.calendarBadge}>
+              <Text style={styles.calendarBadgeText}>{todayCount > 9 ? '9+' : todayCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Link>
+
       <Sidebar
         refreshRef={sidebarRefreshRef}
         onSectionsChanged={() => {
@@ -372,18 +373,38 @@ export default function Home() {
 }
 
 const styles = StyleSheet.create({
-  calendarButton: {
-    flexDirection: 'row',
+  calendarBubble: {
+    position: 'absolute',
+    left: 20,
+    top: 118,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#D4A574',
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#6B8E4E',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    shadowColor: '#A9794A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 998,
   },
-  calendarButtonTextBox: { flex: 1, marginLeft: 12 },
-  calendarButtonSub: { color: '#E8F5E9', fontSize: 12, marginTop: 2 },
+  calendarBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    backgroundColor: '#7B5E7B',
+    borderWidth: 2,
+    borderColor: '#F5EFE6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  calendarBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   syncCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -436,11 +457,6 @@ const styles = StyleSheet.create({
   weekBarEmpty: { backgroundColor: '#E5E0D8' },
   weekLabel: { fontSize: 12, color: '#8B8680', marginTop: 6 },
   weekLabelToday: { color: '#6B8E4E', fontWeight: '700' },
-  calendarButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
   container: {
     flex: 1,
     backgroundColor: '#F5EFE6',
