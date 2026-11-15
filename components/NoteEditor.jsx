@@ -23,6 +23,8 @@ import { persistPickedImage, deletePersistedImage } from '../utils/imageStorage'
 import { MOODS, getMood } from '../utils/moods';
 
 // Photos sit inside the text as ⟦img:filename⟧ markers (same format as the section screen)
+const MOOD_CELL = 54; // chip width (46) + gap (8)
+
 const imageIdFromUri = (uri) => uri.split('/').pop();
 const makeMarker = (uri) => `⟦img:${imageIdFromUri(uri)}⟧`;
 
@@ -215,6 +217,11 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
             showsHorizontalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             style={styles.moodStrip}
+            // two rows that scroll sideways, so more moods are visible at once
+            contentContainerStyle={[
+              styles.moodGrid,
+              { width: Math.ceil(MOODS.length / 2) * MOOD_CELL },
+            ]}
           >
             {MOODS.map((m) => {
               const active = m.id === mood;
@@ -348,11 +355,13 @@ const styles = StyleSheet.create({
   moodTitle: { fontSize: 13, fontWeight: '700', color: '#7B5E7B' },
   moodClear: { fontSize: 12, fontWeight: '700', color: '#C0392B' },
   moodStrip: { marginTop: 8, flexGrow: 0 },
+  moodGrid: { flexDirection: 'column', flexWrap: 'wrap', height: 108 },
   moodChip: {
     width: 46,
     height: 46,
     borderRadius: 23,
     marginRight: 8,
+    marginBottom: 8,
     backgroundColor: '#EDE7F6',
     alignItems: 'center',
     justifyContent: 'center',
