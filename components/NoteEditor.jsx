@@ -8,7 +8,7 @@ import {
   TextInput,
   TouchableOpacity,
   Modal,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Alert,
   Image,
@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatLongDate, withTime } from '../utils/diaryDates';
 import { persistPickedImage, deletePersistedImage } from '../utils/imageStorage';
@@ -39,6 +40,20 @@ const Stepper = ({ value, onDec, onInc, onDecLong, onIncLong, width = 44 }) => (
 export default function NoteEditor({ visible, day, note, onSave, onDelete, onClose }) {
   const isEdit = !!note;
   const { height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+
+  // Android pop-up windows don't resize for the keyboard, so follow its height ourselves
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKeyboardHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
   const [text, setText] = useState('');
   const [hour12, setHour12] = useState(12);
   const [minute, setMinute] = useState(0);
@@ -59,6 +74,16 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
   }, [visible, note]);
 
   if (!day) return null;
+
+  // Space to leave under the sheet: the keyboard (plus the nav bar it covers on Android),
+  // or nothing when the keyboard is closed (the sheet then pads itself above the nav bar).
+  const keyboardOpen = keyboardHeight > 0;
+  const bottomGap = keyboardOpen ? keyboardHeight + (Platform.OS === 'android' ? insets.bottom : 0) : 0;
+  const available = screenHeight - bottomGap - insets.top;
+  const sheetMaxHeight = Math.max(260, available - 12);
+  const inputMaxHeight = keyboardOpen
+    ? Math.max(100, Math.round(available * 0.28))
+    : Math.round(screenHeight * 0.38);
 
   const bumpHour = (d) => setHour12((h) => ((h - 1 + d + 12) % 12) + 1);
   const bumpMinute = (d) => setMinute((m) => (m + d + 60) % 60);
@@ -135,12 +160,18 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={cancel}>
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={[styles.backdrop, { paddingBottom: bottomGap }]}>
         <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={cancel} />
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { maxHeight: sheetMaxHeight }]}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            contentContainerStyle={[
+              styles.sheetContent,
+              { paddingBottom: keyboardOpen ? 16 : insets.bottom + 20 },
+            ]}
+          >
           <View style={styles.sheetHeader}>
             <View>
               <Text style={styles.sheetTitle}>{isEdit ? 'Edit note' : 'New note'}</Text>
@@ -154,7 +185,8 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
           </View>
 
           <TextInput
-            style={[styles.input, { maxHeight: Math.round(screenHeight * 0.38) }]}
+            style={[styles.input, { maxHeight: inputMaxHeight }]}
+            scrollEnabled
             value={text}
             onChangeText={setText}
             placeholder="What happened on this day?"
@@ -229,8 +261,9 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
               <Text style={styles.saveText}>{isEdit ? 'Save changes' : 'Add note'}</Text>
             </TouchableOpacity>
           </View>
+          </ScrollView>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
@@ -242,9 +275,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBF8F2',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 28,
+    overflow: 'hidden',
   },
+  sheetContent: { padding: 20 },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sheetTitle: { fontSize: 20, fontWeight: '700', color: '#4A403A' },
   sheetSub: { fontSize: 13, color: '#8B8680', marginTop: 2 },
