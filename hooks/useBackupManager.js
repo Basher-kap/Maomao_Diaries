@@ -13,6 +13,8 @@ const STORAGE_KEYS = {
   ITEMS: '@diary_items_',
   CALENDAR: '@calendar_notes',
   MIGRATED: '@calendar_migrated',
+  DAY_TITLES: '@calendar_day_titles',
+  SPLIT_ORIGINALS: '@calendar_split_originals',
 };
 
 export const useBackupManager = (onDataChanged) => {  // ← add callback parameter
@@ -175,6 +177,10 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
     const calendarNotes = calendarString ? JSON.parse(calendarString) : [];
     const migratedString = await AsyncStorage.getItem(STORAGE_KEYS.MIGRATED);
     const migrated = migratedString ? JSON.parse(migratedString) : [];
+    const titlesString = await AsyncStorage.getItem(STORAGE_KEYS.DAY_TITLES);
+    const dayTitles = titlesString ? JSON.parse(titlesString) : {};
+    const originalsString = await AsyncStorage.getItem(STORAGE_KEYS.SPLIT_ORIGINALS);
+    const splitOriginals = originalsString ? JSON.parse(originalsString) : [];
 
     return {
       metadata: {
@@ -190,6 +196,8 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
       totalItems: totalItems,
       calendarNotes: calendarNotes,
       calendarMigrated: migrated,
+      calendarDayTitles: dayTitles,
+      calendarSplitOriginals: splitOriginals,
     };
   };
 
@@ -253,6 +261,15 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
           STORAGE_KEYS.MIGRATED,
           JSON.stringify(backupData.calendarMigrated || [])
         );
+        // Without saved titles the app re-reads them from the entries' quoted titles
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.DAY_TITLES,
+          JSON.stringify(backupData.calendarDayTitles || {})
+        );
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.SPLIT_ORIGINALS,
+          JSON.stringify(backupData.calendarSplitOriginals || [])
+        );
       } else {
         const currentSectionsString = await AsyncStorage.getItem(STORAGE_KEYS.SECTIONS);
         const currentSections = currentSectionsString ? JSON.parse(currentSectionsString) : [];
@@ -292,6 +309,25 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
         await AsyncStorage.setItem(
           STORAGE_KEYS.MIGRATED,
           JSON.stringify([...new Set([...currentMig, ...(backupData.calendarMigrated || [])])])
+        );
+
+        // Titles: keep what is on the phone, fill the gaps from the backup
+        const titlesString = await AsyncStorage.getItem(STORAGE_KEYS.DAY_TITLES);
+        const currentTitles = titlesString ? JSON.parse(titlesString) : {};
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.DAY_TITLES,
+          JSON.stringify({ ...(backupData.calendarDayTitles || {}), ...currentTitles })
+        );
+
+        const origString = await AsyncStorage.getItem(STORAGE_KEYS.SPLIT_ORIGINALS);
+        const currentOrig = origString ? JSON.parse(origString) : [];
+        const origIds = new Set(currentOrig.map((o) => o.id));
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.SPLIT_ORIGINALS,
+          JSON.stringify([
+            ...currentOrig,
+            ...(backupData.calendarSplitOriginals || []).filter((o) => !origIds.has(o.id)),
+          ])
         );
       }
 

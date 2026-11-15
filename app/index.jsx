@@ -1,5 +1,5 @@
 //app/index.jsx
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Animated } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Animated, Alert } from 'react-native';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link, useFocusEffect } from 'expo-router';
@@ -16,7 +16,8 @@ export default function Home() {
   const sidebarRefreshRef = useRef(null);
   const { sections, refreshSections } = useDiarySections();
   // Reloads on every focus, so notes added on the calendar page show up here
-  const { entriesByDay, totalEntries, migration, refresh: refreshCalendar } = useDiaryCalendar();
+  const { entriesByDay, totalEntries, migration, splitStatus, undoTimeSplit, refresh: refreshCalendar } =
+    useDiaryCalendar();
   const [greeting, setGreeting] = useState('');
   const [currentQuote, setCurrentQuote] = useState({ text: '', context: '' });
   const { markInteractive } = useObserve();
@@ -166,6 +167,29 @@ export default function Home() {
                     : `${migration.pending} notes still to copy. Keep the sections until this turns green.`}
                 </Text>
               </View>
+            </View>
+          )}
+
+          {splitStatus.entries > 0 && (
+            <View style={styles.splitRow}>
+              <Ionicons name="git-branch-outline" size={18} color="#7B5E7B" />
+              <Text style={styles.splitText}>
+                {splitStatus.entries} entries were split by their written times into {splitStatus.notes} notes.
+              </Text>
+              <TouchableOpacity
+                onPress={() =>
+                  Alert.alert(
+                    'Undo the split?',
+                    'The original entries come back. Any edits you made to the split notes will be lost.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Undo split', style: 'destructive', onPress: undoTimeSplit },
+                    ]
+                  )
+                }
+              >
+                <Text style={styles.splitUndo}>Undo</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -371,6 +395,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#DCEDC8',
   },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+    paddingHorizontal: 6,
+  },
+  splitText: { flex: 1, fontSize: 12, color: '#6D6760', lineHeight: 17 },
+  splitUndo: { fontSize: 13, fontWeight: '700', color: '#C0392B', padding: 4 },
   syncCardPending: { backgroundColor: '#FFF8E1', borderColor: '#FFE0B2' },
   syncTextBox: { flex: 1 },
   syncTitle: { fontSize: 14, fontWeight: '700', color: '#4A403A' },

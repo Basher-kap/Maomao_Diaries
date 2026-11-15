@@ -117,3 +117,52 @@ export const lastNDays = (n, today = new Date()) =>
     const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (n - 1 - i));
     return { key: toDateKey(d), label: WEEKDAY_SHORT[d.getDay()].slice(0, 1), isToday: i === n - 1 };
   });
+
+// ---------------------------------------------------------------------------
+// Which calendar DAY does an entry belong to?
+// Diary entries start with the date they are about ("October 17, 2026") but are
+// often saved the next day, so the header date wins over the save time.
+// Typos are tolerated: a wrong year is fixed using the save time, and a header
+// that is far away from the save time (more than 3 days) is ignored.
+
+const MONTH_LOOKUP = MONTH_NAMES.reduce((acc, name, i) => {
+  acc[name.toLowerCase()] = i;
+  acc[name.slice(0, 3).toLowerCase()] = i;
+  return acc;
+}, {});
+
+const HEADER_DATE = /^\s*([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/;
+
+export const parseHeaderDate = (text) => {
+  const m = typeof text === 'string' ? text.match(HEADER_DATE) : null;
+  if (!m) return null;
+  const month = MONTH_LOOKUP[m[1].toLowerCase()];
+  if (month === undefined) return null;
+  return { month, day: Number(m[2]), year: Number(m[3]) };
+};
+
+const validDay = (year, month, day) => {
+  const d = new Date(year, month, day);
+  return d.getFullYear() === year && d.getMonth() === month && d.getDate() === day ? d : null;
+};
+
+const dayDiff = (a, b) => Math.round((a.getTime() - b.getTime()) / 86400000);
+
+/** Local-midnight Date of the day this entry should appear on. */
+export const getEntryDay = (item) => {
+  const created = getEntryDate(item);
+  if (!created) return null;
+  const base = new Date(created.getFullYear(), created.getMonth(), created.getDate());
+
+  const header = parseHeaderDate(item?.text);
+  if (!header) return base;
+
+  let best = null;
+  for (const year of [header.year, base.getFullYear()]) {
+    const candidate = validDay(year, header.month, header.day);
+    if (!candidate) continue;
+    const diff = Math.abs(dayDiff(candidate, base));
+    if (diff <= 3 && (!best || diff < best.diff)) best = { date: candidate, diff };
+  }
+  return best ? best.date : base;
+};

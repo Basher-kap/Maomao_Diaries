@@ -1,13 +1,14 @@
 // app/calendar.jsx — Calendar page.
 // Tap a day, write a note on it. Notes are filed in the month's section, so the
 // dashboard, sidebar sections, backup and AI search all see them.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -27,7 +28,7 @@ const cleanPreview = (text) =>
 
 export default function CalendarPage() {
   const router = useRouter();
-  const { entriesByDay, totalEntries, isLoading, addNote, updateNote, deleteNote } =
+  const { entriesByDay, totalEntries, titles, setDayTitle, isLoading, addNote, updateNote, deleteNote } =
     useDiaryCalendar();
 
   const now = new Date();
@@ -37,6 +38,9 @@ export default function CalendarPage() {
   const [selectedKey, setSelectedKey] = useState(todayKey);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const titleKeyRef = useRef(null); // the day being titled, even if the selection changes mid-edit
 
   const cells = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
   const monthCount = useMemo(
@@ -47,6 +51,23 @@ export default function CalendarPage() {
   const [sy, sm, sd] = selectedKey.split('-').map(Number);
   const selectedDate = new Date(sy, sm - 1, sd);
   const selectedEntries = entriesByDay[selectedKey] || [];
+  const currentTitle = titles[selectedKey] || '';
+
+  const startTitleEdit = () => {
+    titleKeyRef.current = selectedKey;
+    setTitleDraft(currentTitle);
+    setTitleEditing(true);
+  };
+
+  const commitTitle = async () => {
+    if (!titleKeyRef.current) return;
+    const key = titleKeyRef.current;
+    titleKeyRef.current = null;
+    setTitleEditing(false);
+    // titles are usually written in quotation marks; store them without
+    const cleaned = titleDraft.replace(/^[\s"“”«„]+|[\s"“”«»]+$/g, '').trim();
+    if (cleaned !== (titles[key] || '')) await setDayTitle(key, cleaned);
+  };
 
   const goToMonth = (delta) => {
     const next = new Date(viewYear, viewMonth + delta, 1);
@@ -110,7 +131,7 @@ export default function CalendarPage() {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* Month switcher */}
         <View style={styles.monthRow}>
@@ -189,7 +210,34 @@ export default function CalendarPage() {
 
         {/* Selected day */}
         <View style={styles.dayHeaderRow}>
-          <Text style={styles.dayHeading}>{formatLongDate(selectedDate)}</Text>
+          <View style={styles.titleBox}>
+            {titleEditing ? (
+              <TextInput
+                style={styles.titleInput}
+                value={titleDraft}
+                onChangeText={setTitleDraft}
+                onSubmitEditing={commitTitle}
+                onBlur={commitTitle}
+                placeholder="Title for this day"
+                placeholderTextColor="#B8A5B8"
+                maxLength={80}
+                returnKeyType="done"
+                autoFocus
+                selectTextOnFocus
+              />
+            ) : (
+              <TouchableOpacity style={styles.titleRow} onPress={startTitleEdit} activeOpacity={0.7}>
+                <Text
+                  style={[styles.dayHeading, !currentTitle && styles.dayHeadingEmpty]}
+                  numberOfLines={2}
+                >
+                  {currentTitle ? `“${currentTitle}”` : 'Add a title…'}
+                </Text>
+                <Ionicons name="pencil" size={14} color="#B8A5B8" style={styles.titlePencil} />
+              </TouchableOpacity>
+            )}
+            <Text style={styles.dayDateCaption}>{formatLongDate(selectedDate)}</Text>
+          </View>
           <TouchableOpacity style={styles.addButton} onPress={openNew} activeOpacity={0.85}>
             <Ionicons name="add" size={20} color="#fff" />
             <Text style={styles.addButtonText}>Add note</Text>
@@ -313,7 +361,20 @@ const styles = StyleSheet.create({
     marginTop: 22,
     marginBottom: 10,
   },
-  dayHeading: { flex: 1, fontSize: 16, fontWeight: '700', color: '#4A403A', paddingRight: 8 },
+  titleBox: { flex: 1, paddingRight: 10 },
+  titleRow: { flexDirection: 'row', alignItems: 'center' },
+  titlePencil: { marginLeft: 6 },
+  dayHeading: { flexShrink: 1, fontSize: 18, fontWeight: '700', color: '#4A403A' },
+  dayHeadingEmpty: { color: '#B8A5B8', fontStyle: 'italic', fontWeight: '500' },
+  dayDateCaption: { fontSize: 12, color: '#8B8680', marginTop: 2 },
+  titleInput: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#4A403A',
+    borderBottomWidth: 2,
+    borderBottomColor: '#6B8E4E',
+    paddingVertical: 2,
+  },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',

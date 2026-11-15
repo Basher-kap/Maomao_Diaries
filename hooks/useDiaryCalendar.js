@@ -6,9 +6,13 @@ import { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Observe } from 'expo-observe';
-import { getEntryDate, toDateKey, formatTime } from '../utils/diaryDates';
+import { getEntryDate, getEntryDay, toDateKey, formatTime } from '../utils/diaryDates';
+import { seedTitles, DAY_TITLES_KEY } from '../utils/dayTitles';
 import {
   migrateMonthSections,
+  splitMigratedNotes,
+  getSplitStatus,
+  undoSplit,
   getMigrationStatus,
   loadAllEntries,
   addCalendarNote,
@@ -22,6 +26,8 @@ export const useDiaryCalendar = () => {
   const [entriesByDay, setEntriesByDay] = useState({});
   const [totalEntries, setTotalEntries] = useState(0);
   const [migration, setMigration] = useState(null);
+  const [titles, setTitles] = useState({});
+  const [splitStatus, setSplitStatus] = useState({ entries: 0, notes: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -29,14 +35,17 @@ export const useDiaryCalendar = () => {
     try {
       // Idempotent: copies each month-section entry once, never twice
       await migrateMonthSections(AsyncStorage);
+      // Cut each entry into one note per written time (9:56, 12:00, ...), once
+      await splitMigratedNotes(AsyncStorage);
       const all = await loadAllEntries(AsyncStorage);
 
       const grouped = {};
       let count = 0;
       for (const item of all) {
-        const date = getEntryDate(item);
-        if (!date) continue;
-        const key = toDateKey(date);
+        const date = getEntryDate(item); // when it was saved (gives the time of day)
+        const day = getEntryDay(item); // which calendar day it belongs to (date in its header)
+        if (!date || !day) continue;
+        const key = toDateKey(day);
         (grouped[key] ||= []).push({
           id: item.id,
           section: item.section, // null = calendar note, string = special section
@@ -50,9 +59,16 @@ export const useDiaryCalendar = () => {
       }
       Object.values(grouped).forEach((list) => list.sort((a, b) => a.timestamp - b.timestamp));
 
+      // Day titles: apply the quoted title found in existing entries to days that have none yet
+      const rawTitles = await AsyncStorage.getItem(DAY_TITLES_KEY);
+      const { titles: seeded, added } = seedTitles(rawTitles ? JSON.parse(rawTitles) : {}, grouped);
+      if (added > 0) await AsyncStorage.setItem(DAY_TITLES_KEY, JSON.stringify(seeded));
+      setTitles(seeded);
+
       setEntriesByDay(grouped);
       setTotalEntries(count);
       setMigration(await getMigrationStatus(AsyncStorage));
+      setSplitStatus(await getSplitStatus(AsyncStorage));
     } catch (error) {
       console.error('Error loading calendar entries:', error);
       setEntriesByDay({});
@@ -68,6 +84,19 @@ export const useDiaryCalendar = () => {
       load();
     }, [load])
   );
+
+  // Save a title for a day. An empty string clears it and keeps it cleared.
+  const setDayTitle = async (dayKey, title) => {
+    const raw = await AsyncStorage.getItem(DAY_TITLES_KEY);
+    const next = { ...(raw ? JSON.parse(raw) : {}), [dayKey]: (title || '').trim() };
+    await AsyncStorage.setItem(DAY_TITLES_KEY, JSON.stringify(next));
+    setTitles(next);
+  };
+
+  const undoTimeSplit = async () => {
+    await undoSplit(AsyncStorage);
+    await load();
+  };
 
   const addNote = async (when, text, images = []) => {
     await addCalendarNote(AsyncStorage, when, text, images);
@@ -95,6 +124,10 @@ export const useDiaryCalendar = () => {
     entriesByDay,
     totalEntries,
     migration,
+    splitStatus,
+    undoTimeSplit,
+    titles,
+    setDayTitle,
     isLoading,
     refresh: load,
     addNote,
