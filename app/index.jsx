@@ -16,7 +16,7 @@ export default function Home() {
   const sidebarRefreshRef = useRef(null);
   const { sections, refreshSections } = useDiarySections();
   // Reloads on every focus, so notes added on the calendar page show up here
-  const { entriesByDay, totalEntries, refresh: refreshCalendar } = useDiaryCalendar();
+  const { entriesByDay, totalEntries, migration, refresh: refreshCalendar } = useDiaryCalendar();
   const [greeting, setGreeting] = useState('');
   const [currentQuote, setCurrentQuote] = useState({ text: '', context: '' });
   const { markInteractive } = useObserve();
@@ -145,6 +145,29 @@ export default function Home() {
               <Text style={styles.statLabel}>Diaries</Text>
             </View>
           </View>
+
+          {/* Month sections -> calendar copy status */}
+          {migration && migration.monthSections > 0 && (
+            <View style={[styles.syncCard, !migration.safeToDelete && styles.syncCardPending]}>
+              <Ionicons
+                name={migration.safeToDelete ? 'checkmark-circle' : 'sync-circle'}
+                size={28}
+                color={migration.safeToDelete ? '#6B8E4E' : '#D4A574'}
+              />
+              <View style={styles.syncTextBox}>
+                <Text style={styles.syncTitle}>
+                  {migration.safeToDelete
+                    ? 'Month sections are safe in your calendar'
+                    : 'Copying month sections to your calendar…'}
+                </Text>
+                <Text style={styles.syncBody}>
+                  {migration.safeToDelete
+                    ? `${migration.monthSections} month sections (${migration.monthEntries} notes) are copied. You can delete them from the sidebar; the notes and photos stay on the calendar.`
+                    : `${migration.pending} notes still to copy. Keep the sections until this turns green.`}
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Pulse: quick summary that updates as you write */}
           <View style={styles.pulseRow}>
@@ -337,6 +360,21 @@ const styles = StyleSheet.create({
   },
   calendarButtonTextBox: { flex: 1, marginLeft: 12 },
   calendarButtonSub: { color: '#E8F5E9', fontSize: 12, marginTop: 2 },
+  syncCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F1F8E9',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#DCEDC8',
+  },
+  syncCardPending: { backgroundColor: '#FFF8E1', borderColor: '#FFE0B2' },
+  syncTextBox: { flex: 1 },
+  syncTitle: { fontSize: 14, fontWeight: '700', color: '#4A403A' },
+  syncBody: { fontSize: 12, color: '#6D6760', marginTop: 3, lineHeight: 17 },
   pulseRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   pulseCard: {
     flex: 1,

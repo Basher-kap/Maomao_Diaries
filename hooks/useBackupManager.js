@@ -11,6 +11,8 @@ import { Alert } from 'react-native';
 const STORAGE_KEYS = {
   SECTIONS: '@diary_sections',
   ITEMS: '@diary_items_',
+  CALENDAR: '@calendar_notes',
+  MIGRATED: '@calendar_migrated',
 };
 
 export const useBackupManager = (onDataChanged) => {  // ← add callback parameter
@@ -38,7 +40,7 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
 
       Alert.alert(
         'Backup Created',
-        `Your diary has been backed up successfully!\n\nFile: ${filename}\n\nItems backed up:\n- ${backupData.sections.length} sections\n- ${backupData.totalItems} total items`,
+        `Your diary has been backed up successfully!\n\nFile: ${filename}\n\nItems backed up:\n- ${backupData.sections.length} sections\n- ${backupData.totalItems} section items\n- ${backupData.calendarNotes.length} calendar notes`,
         [{ text: 'OK' }]
       );
 
@@ -97,7 +99,7 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
       const confirmRestore = await new Promise((resolve) => {
         Alert.alert(
           'Restore Backup?',
-          `This backup contains:\n- ${backupData.sections.length} sections\n- ${backupData.totalItems} total items\n\nCreated: ${backupData.metadata.timestamp}\n\n${replaceExisting ? '⚠️ This will REPLACE all current data!' : 'This will MERGE with your current data.'}`,
+          `This backup contains:\n- ${backupData.sections.length} sections\n- ${backupData.totalItems} section items\n- ${(backupData.calendarNotes || []).length} calendar notes\n\nCreated: ${backupData.metadata.timestamp}\n\n${replaceExisting ? '⚠️ This will REPLACE all current data!' : 'This will MERGE with your current data.'}`,
           [
             { text: 'Cancel', onPress: () => resolve(false), style: 'cancel' },
             { 
@@ -169,17 +171,25 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
       totalItems += items.length;
     }
 
+    const calendarString = await AsyncStorage.getItem(STORAGE_KEYS.CALENDAR);
+    const calendarNotes = calendarString ? JSON.parse(calendarString) : [];
+    const migratedString = await AsyncStorage.getItem(STORAGE_KEYS.MIGRATED);
+    const migrated = migratedString ? JSON.parse(migratedString) : [];
+
     return {
       metadata: {
-        version: '1.0',
+        version: '1.1',
         timestamp: new Date().toISOString(),
         appName: 'Diary App',
         totalSections: sections.length,
         totalItems: totalItems,
+        totalCalendarNotes: calendarNotes.length,
       },
       sections: sections,
       items: allItems,
       totalItems: totalItems,
+      calendarNotes: calendarNotes,
+      calendarMigrated: migrated,
     };
   };
 
@@ -233,6 +243,16 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
           const itemsKey = STORAGE_KEYS.ITEMS + section;
           await AsyncStorage.setItem(itemsKey, JSON.stringify(items));
         }
+
+        // Older backups have no calendar notes: the app rebuilds them from the month sections
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.CALENDAR,
+          JSON.stringify(backupData.calendarNotes || [])
+        );
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.MIGRATED,
+          JSON.stringify(backupData.calendarMigrated || [])
+        );
       } else {
         const currentSectionsString = await AsyncStorage.getItem(STORAGE_KEYS.SECTIONS);
         const currentSections = currentSectionsString ? JSON.parse(currentSectionsString) : [];
@@ -256,6 +276,23 @@ export const useBackupManager = (onDataChanged) => {  // ← add callback parame
 
           await AsyncStorage.setItem(itemsKey, JSON.stringify(mergedItems));
         }
+
+        // Merge calendar notes by id, and remember which entries were already copied
+        const calString = await AsyncStorage.getItem(STORAGE_KEYS.CALENDAR);
+        const currentCal = calString ? JSON.parse(calString) : [];
+        const calIds = new Set(currentCal.map((n) => n.id));
+        const calToAdd = (backupData.calendarNotes || []).filter((n) => !calIds.has(n.id));
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.CALENDAR,
+          JSON.stringify([...currentCal, ...calToAdd])
+        );
+
+        const migString = await AsyncStorage.getItem(STORAGE_KEYS.MIGRATED);
+        const currentMig = migString ? JSON.parse(migString) : [];
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.MIGRATED,
+          JSON.stringify([...new Set([...currentMig, ...(backupData.calendarMigrated || [])])])
+        );
       }
 
       return { success: true };

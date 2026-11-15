@@ -1,57 +1,58 @@
 // hooks/useDiaryCalendar.js
-// Reads every section from AsyncStorage and groups all entries by the
-// calendar day (and time) they were written.
+// Loads every calendar entry grouped by day, and runs the one-time copy of the
+// month sections ("October 2026" ...) into the independent calendar store.
 
 import { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { STORAGE_KEYS } from './useDiaryStorage';
-import { getEntryDate, toDateKey, formatTime } from '../utils/diaryDates';
-import { addCalendarNote, updateCalendarNote, deleteCalendarNote } from '../utils/calendarNotes';
 import { Observe } from 'expo-observe';
+import { getEntryDate, toDateKey, formatTime } from '../utils/diaryDates';
+import {
+  migrateMonthSections,
+  getMigrationStatus,
+  loadAllEntries,
+  addCalendarNote,
+  updateEntry,
+  deleteEntry,
+  findOrphans,
+} from '../utils/calendarNotes';
+import { deletePersistedImages } from '../utils/imageStorage';
 
 export const useDiaryCalendar = () => {
   const [entriesByDay, setEntriesByDay] = useState({});
   const [totalEntries, setTotalEntries] = useState(0);
+  const [migration, setMigration] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     try {
-      const rawSections = await AsyncStorage.getItem(STORAGE_KEYS.SECTIONS);
-      const sections = rawSections ? JSON.parse(rawSections) : [];
+      // Idempotent: copies each month-section entry once, never twice
+      await migrateMonthSections(AsyncStorage);
+      const all = await loadAllEntries(AsyncStorage);
 
       const grouped = {};
       let count = 0;
-
-      for (const section of sections) {
-        const rawItems = await AsyncStorage.getItem(STORAGE_KEYS.ITEMS + section);
-        if (!rawItems) continue;
-
-        for (const item of JSON.parse(rawItems)) {
-          const date = getEntryDate(item);
-          if (!date) continue;
-
-          const key = toDateKey(date);
-          (grouped[key] ||= []).push({
-            id: item.id,
-            section,
-            text: item.text || '',
-            imageCount: (item.images || []).length,
-            timestamp: date.getTime(),
-            time: formatTime(date),
-          });
-          count += 1;
-        }
+      for (const item of all) {
+        const date = getEntryDate(item);
+        if (!date) continue;
+        const key = toDateKey(date);
+        (grouped[key] ||= []).push({
+          id: item.id,
+          section: item.section, // null = calendar note, string = special section
+          text: item.text || '',
+          images: item.images || [],
+          imageCount: (item.images || []).length,
+          timestamp: date.getTime(),
+          time: formatTime(date),
+        });
+        count += 1;
       }
-
-      // Earliest first inside a day, so the day reads like a timeline
-      Object.values(grouped).forEach((list) =>
-        list.sort((a, b) => a.timestamp - b.timestamp)
-      );
+      Object.values(grouped).forEach((list) => list.sort((a, b) => a.timestamp - b.timestamp));
 
       setEntriesByDay(grouped);
       setTotalEntries(count);
+      setMigration(await getMigrationStatus(AsyncStorage));
     } catch (error) {
       console.error('Error loading calendar entries:', error);
       setEntriesByDay({});
@@ -61,31 +62,43 @@ export const useDiaryCalendar = () => {
     }
   }, []);
 
-  // Reload whenever the screen comes back into focus (after editing an entry,
-  // importing a backup, etc.)
+  // Reload whenever the screen regains focus (after editing, importing a backup, ...)
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load])
   );
 
-  const addNote = async (when, text) => {
-    const { section } = await addCalendarNote(AsyncStorage, when, text);
-    Observe.logEvent('diary.entry_created', { attributes: { section, source: 'calendar' } });
+  const addNote = async (when, text, images = []) => {
+    await addCalendarNote(AsyncStorage, when, text, images);
+    Observe.logEvent('diary.entry_created', { attributes: { source: 'calendar' } });
     await load();
   };
 
-  const updateNote = async (section, id, text, when) => {
-    await updateCalendarNote(AsyncStorage, section, id, text, when);
-    Observe.logEvent('diary.entry_updated', { attributes: { section, source: 'calendar' } });
+  const updateNote = async (entry, text, when, images = []) => {
+    await updateEntry(AsyncStorage, entry, text, when, images);
+    // photos the user removed while editing
+    const removed = (entry.images || []).filter((u) => !images.includes(u));
+    await deletePersistedImages(await findOrphans(AsyncStorage, removed));
+    Observe.logEvent('diary.entry_updated', { attributes: { source: 'calendar' } });
     await load();
   };
 
-  const deleteNote = async (section, id) => {
-    await deleteCalendarNote(AsyncStorage, section, id);
-    Observe.logEvent('diary.entry_deleted', { attributes: { section, source: 'calendar' } });
+  const deleteNote = async (entry) => {
+    const orphans = await deleteEntry(AsyncStorage, entry);
+    await deletePersistedImages(orphans);
+    Observe.logEvent('diary.entry_deleted', { attributes: { source: 'calendar' } });
     await load();
   };
 
-  return { entriesByDay, totalEntries, isLoading, refresh: load, addNote, updateNote, deleteNote };
+  return {
+    entriesByDay,
+    totalEntries,
+    migration,
+    isLoading,
+    refresh: load,
+    addNote,
+    updateNote,
+    deleteNote,
+  };
 };

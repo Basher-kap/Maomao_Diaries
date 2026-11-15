@@ -53,11 +53,24 @@ export default function AISearch({ sections = [] }) {
   const buildDiaryContext = async () => {
     const parts = [];
     const activeSections = sections.length > 0 ? sections : ['Personal', 'Work', 'Health', 'Travel'];
-    
+
+    // Calendar notes (month sections are copied here, so they stay searchable after deletion)
+    const calRaw = await AsyncStorage.getItem('@calendar_notes');
+    const calNotes = calRaw ? JSON.parse(calRaw) : [];
+    if (calNotes.length) {
+      parts.push('=== Calendar notes ===');
+      calNotes.forEach(item => {
+        parts.push(`[Date: ${item.createdAt || item.lastModified}] Entry: ${item.text}`);
+      });
+    }
+    const migRaw = await AsyncStorage.getItem('@calendar_migrated');
+    const migrated = new Set(migRaw ? JSON.parse(migRaw) : []);
+
     for (const section of activeSections) {
       const raw = await AsyncStorage.getItem(`@diary_items_${section}`);
       if (!raw) continue;
-      const items = JSON.parse(raw);
+      // skip entries already included above as calendar notes
+      const items = JSON.parse(raw).filter(item => !migrated.has(`${section}::${item.id}`));
       if (!items.length) continue;
       parts.push(`=== Section: "${section}" ===`);
       items.forEach(item => {

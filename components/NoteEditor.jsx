@@ -11,9 +11,17 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
+  ScrollView,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatLongDate, withTime } from '../utils/diaryDates';
+import { persistPickedImage, deletePersistedImage } from '../utils/imageStorage';
+
+// Photos sit inside the text as ⟦img:filename⟧ markers (same format as the section screen)
+const imageIdFromUri = (uri) => uri.split('/').pop();
+const makeMarker = (uri) => `⟦img:${imageIdFromUri(uri)}⟧`;
 
 const Stepper = ({ value, onDec, onInc, onDecLong, onIncLong, width = 44 }) => (
   <View style={styles.stepper}>
@@ -33,12 +41,16 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
   const [hour12, setHour12] = useState(12);
   const [minute, setMinute] = useState(0);
   const [pm, setPm] = useState(false);
+  const [images, setImages] = useState([]);
+  const [sessionAdded, setSessionAdded] = useState([]);
 
   useEffect(() => {
     if (!visible) return;
     const base = note ? new Date(note.timestamp) : new Date();
     const h24 = base.getHours();
     setText(note ? note.text : '');
+    setImages(note ? note.images || [] : []);
+    setSessionAdded([]);
     setPm(h24 >= 12);
     setHour12(h24 % 12 || 12);
     setMinute(base.getMinutes());
@@ -57,7 +69,60 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
     }
     const h24 = (hour12 % 12) + (pm ? 12 : 0);
     const seconds = isEdit ? new Date(note.timestamp).getSeconds() : new Date().getSeconds();
-    onSave(trimmed, withTime(day, h24, minute, seconds));
+    onSave(trimmed, withTime(day, h24, minute, seconds), images);
+  };
+
+  // Cancel: throw away photos that were added in this editor but never saved
+  const cancel = async () => {
+    await Promise.all(
+      sessionAdded.filter((uri) => images.includes(uri)).map((uri) => deletePersistedImage(uri))
+    );
+    onClose();
+  };
+
+  const addPhotos = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Maomao needs access to your gallery to attach photos.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+      allowsMultipleSelection: true,
+      selectionLimit: 5,
+    });
+    if (result.canceled) return;
+
+    const added = [];
+    for (const asset of result.assets) {
+      try {
+        added.push(await persistPickedImage(asset.uri));
+      } catch (e) {
+        console.error('Could not save photo:', e);
+      }
+    }
+    if (!added.length) return;
+    setImages((prev) => [...prev, ...added]);
+    setSessionAdded((prev) => [...prev, ...added]);
+    setText((prev) => {
+      const gap = prev && !prev.endsWith('\n') ? '\n\n' : '';
+      return `${prev}${gap}${added.map(makeMarker).join('\n')}\n`;
+    });
+  };
+
+  const removePhoto = async (uri) => {
+    setImages((prev) => prev.filter((u) => u !== uri));
+    setText((prev) =>
+      prev
+        .split(makeMarker(uri))
+        .join('')
+        .replace(/\n{3,}/g, '\n\n')
+    );
+    if (sessionAdded.includes(uri)) {
+      setSessionAdded((prev) => prev.filter((u) => u !== uri));
+      await deletePersistedImage(uri);
+    }
   };
 
   const confirmDelete = () =>
@@ -67,12 +132,12 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
     ]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={cancel}>
       <KeyboardAvoidingView
         style={styles.backdrop}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={onClose} />
+        <TouchableOpacity style={styles.dismissArea} activeOpacity={1} onPress={cancel} />
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
             <View>
@@ -96,6 +161,31 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
             autoFocus
             textAlignVertical="top"
           />
+
+          {/* Photos */}
+          <View style={styles.photoHeader}>
+            <TouchableOpacity style={styles.photoAddBtn} onPress={addPhotos}>
+              <Ionicons name="image-outline" size={18} color="#7B5E7B" />
+              <Text style={styles.photoAddText}>Add photo</Text>
+            </TouchableOpacity>
+            {images.length > 0 && (
+              <Text style={styles.photoHint}>
+                {images.length} {images.length === 1 ? 'photo' : 'photos'} · keep its ⟦img⟧ tag in the text
+              </Text>
+            )}
+          </View>
+          {images.length > 0 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoStrip}>
+              {images.map((uri) => (
+                <View key={uri} style={styles.thumbWrap}>
+                  <Image source={{ uri }} style={styles.thumb} />
+                  <TouchableOpacity style={styles.thumbRemove} onPress={() => removePhoto(uri)}>
+                    <Ionicons name="close" size={14} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          )}
 
           <View style={styles.timeRow}>
             <Ionicons name="time-outline" size={22} color="#6B8E4E" />
@@ -130,7 +220,7 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
           <Text style={styles.hint}>Hold the minute arrows to jump by 10.</Text>
 
           <View style={styles.actions}>
-            <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={onClose}>
+            <TouchableOpacity style={[styles.btn, styles.cancelBtn]} onPress={cancel}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={save}>
@@ -160,7 +250,7 @@ const styles = StyleSheet.create({
   input: {
     marginTop: 14,
     minHeight: 130,
-    maxHeight: 240,
+    maxHeight: 200,
     backgroundColor: '#fff',
     borderRadius: 14,
     padding: 14,
@@ -185,6 +275,32 @@ const styles = StyleSheet.create({
   ampmBtnActive: { backgroundColor: '#6B8E4E' },
   ampmText: { fontWeight: '700', color: '#7B5E7B' },
   ampmTextActive: { color: '#fff' },
+  photoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
+  photoAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EDE7F6',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+  },
+  photoAddText: { color: '#7B5E7B', fontWeight: '600', fontSize: 13 },
+  photoHint: { fontSize: 11, color: '#B8A5B8', flexShrink: 1, marginLeft: 8, textAlign: 'right' },
+  photoStrip: { marginTop: 10, flexGrow: 0 },
+  thumbWrap: { marginRight: 10 },
+  thumb: { width: 72, height: 72, borderRadius: 12, backgroundColor: '#E5E0D8' },
+  thumbRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#C0392B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   hint: { textAlign: 'center', fontSize: 11, color: '#B8A5B8', marginTop: 4 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   btn: { flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center' },

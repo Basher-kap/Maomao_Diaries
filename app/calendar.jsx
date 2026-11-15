@@ -67,21 +67,16 @@ export default function CalendarPage() {
   };
 
   const onEntryPress = (entry) => {
-    // Entries with photos use the full section editor so images stay intact
-    if (entry.imageCount > 0) {
-      router.push(`/diary/${encodeURIComponent(entry.section)}`);
-      return;
-    }
     setEditingNote(entry);
     setEditorOpen(true);
   };
 
-  const handleSave = async (text, when) => {
+  const handleSave = async (text, when, images) => {
     try {
       if (editingNote) {
-        await updateNote(editingNote.section, editingNote.id, text, when);
+        await updateNote(editingNote, text, when, images);
       } else {
-        await addNote(when, text);
+        await addNote(when, text, images);
       }
       setEditorOpen(false);
     } catch (e) {
@@ -92,7 +87,7 @@ export default function CalendarPage() {
   const handleDelete = async () => {
     if (!editingNote) return;
     try {
-      await deleteNote(editingNote.section, editingNote.id);
+      await deleteNote(editingNote);
       setEditorOpen(false);
     } catch (e) {
       console.error('Error deleting note:', e);
@@ -219,9 +214,9 @@ export default function CalendarPage() {
               </View>
               <View style={styles.entryBody}>
                 <View style={styles.sectionTag}>
-                  <Ionicons name="leaf" size={12} color="#6B8E4E" />
+                  <Ionicons name={entry.section ? 'bookmark' : 'leaf'} size={12} color="#6B8E4E" />
                   <Text style={styles.sectionTagText} numberOfLines={1}>
-                    {entry.section.trim()}
+                    {entry.section ? entry.section.trim() : 'Calendar note'}
                   </Text>
                   {entry.imageCount > 0 && (
                     <>

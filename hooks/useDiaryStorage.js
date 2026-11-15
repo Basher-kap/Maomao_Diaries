@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Observe } from 'expo-observe';
 import { deletePersistedImages } from '../utils/imageStorage';
+import { getCalendarImages } from '../utils/calendarNotes';
 
 const STORAGE_KEYS = {
   SECTIONS: '@diary_sections',
@@ -143,7 +144,9 @@ export const useDiarySections = () => {
         const parsedItems = JSON.parse(storedItems);
         itemCount = parsedItems.length;
         const allImages = parsedItems.flatMap((item) => item.images || []);
-        await deletePersistedImages(allImages);
+        // Photos copied into calendar notes must survive deleting the section
+        const protectedImages = await getCalendarImages(AsyncStorage);
+        await deletePersistedImages(allImages.filter((uri) => !protectedImages.has(uri)));
       }
 
       await AsyncStorage.removeItem(itemsKey);
