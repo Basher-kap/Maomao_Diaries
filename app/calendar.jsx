@@ -9,6 +9,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Image,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -26,6 +27,10 @@ import {
 const cleanPreview = (text) =>
   text.replace(/⟦img:[^⟧]+⟧/g, '').replace(/\s+/g, ' ').trim();
 
+// Full text for the expanded view: keeps paragraphs, drops the photo tags (photos are shown below)
+const fullTextOf = (text) =>
+  text.replace(/⟦img:[^⟧]+⟧/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+
 export default function CalendarPage() {
   const router = useRouter();
   const { entriesByDay, totalEntries, titles, setDayTitle, isLoading, addNote, updateNote, deleteNote } =
@@ -38,6 +43,7 @@ export default function CalendarPage() {
   const [selectedKey, setSelectedKey] = useState(todayKey);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
+  const [expanded, setExpanded] = useState(() => new Set());
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleKeyRef = useRef(null); // the day being titled, even if the selection changes mid-edit
@@ -52,6 +58,14 @@ export default function CalendarPage() {
   const selectedDate = new Date(sy, sm - 1, sd);
   const selectedEntries = entriesByDay[selectedKey] || [];
   const currentTitle = titles[selectedKey] || '';
+
+  const toggleExpanded = (key) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const startTitleEdit = () => {
     titleKeyRef.current = selectedKey;
@@ -250,35 +264,73 @@ export default function CalendarPage() {
             <Text style={styles.emptyText}>Nothing written yet. Tap to add a note for this day.</Text>
           </TouchableOpacity>
         ) : (
-          selectedEntries.map((entry) => (
-            <TouchableOpacity
-              key={`${entry.section}-${entry.id}`}
-              style={styles.entryCard}
-              activeOpacity={0.8}
-              onPress={() => onEntryPress(entry)}
-            >
-              <View style={styles.timeColumn}>
-                <Text style={styles.timeText}>{entry.time}</Text>
-              </View>
-              <View style={styles.entryBody}>
-                <View style={styles.sectionTag}>
-                  <Ionicons name={entry.section ? 'bookmark' : 'leaf'} size={12} color="#6B8E4E" />
-                  <Text style={styles.sectionTagText} numberOfLines={1}>
-                    {entry.section ? entry.section.trim() : 'Calendar note'}
+          selectedEntries.map((entry) => {
+            const entryKey = `${entry.section || 'cal'}-${entry.id}`;
+            const isOpen = expanded.has(entryKey);
+            const fullText = fullTextOf(entry.text);
+            const collapsedText = cleanPreview(entry.text) || '(empty entry)';
+            const canExpand =
+              fullText.split('\n').length > 4 || collapsedText.length > 150 || entry.images.length > 0;
+
+            return (
+              <TouchableOpacity
+                key={entryKey}
+                style={styles.entryCard}
+                activeOpacity={0.85}
+                onPress={() => (canExpand ? toggleExpanded(entryKey) : onEntryPress(entry))}
+              >
+                <View style={styles.timeColumn}>
+                  <Text style={styles.timeText}>{entry.time}</Text>
+                </View>
+                <View style={styles.entryBody}>
+                  <View style={styles.entryTopRow}>
+                    <View style={styles.sectionTag}>
+                      <Ionicons name={entry.section ? 'bookmark' : 'leaf'} size={12} color="#6B8E4E" />
+                      <Text style={styles.sectionTagText} numberOfLines={1}>
+                        {entry.section ? entry.section.trim() : 'Calendar note'}
+                      </Text>
+                      {entry.imageCount > 0 && (
+                        <>
+                          <Ionicons name="image" size={12} color="#7B5E7B" style={{ marginLeft: 8 }} />
+                          <Text style={styles.imageCount}>{entry.imageCount}</Text>
+                        </>
+                      )}
+                    </View>
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => onEntryPress(entry)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="create-outline" size={18} color="#7B5E7B" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.entryText} numberOfLines={isOpen ? undefined : 4}>
+                    {isOpen ? fullText || '(empty entry)' : collapsedText}
                   </Text>
-                  {entry.imageCount > 0 && (
-                    <>
-                      <Ionicons name="image" size={12} color="#7B5E7B" style={{ marginLeft: 8 }} />
-                      <Text style={styles.imageCount}>{entry.imageCount}</Text>
-                    </>
+
+                  {isOpen && entry.images.length > 0 && (
+                    <View style={styles.photoGrid}>
+                      {entry.images.map((uri) => (
+                        <Image key={uri} source={{ uri }} style={styles.photo} />
+                      ))}
+                    </View>
+                  )}
+
+                  {canExpand && (
+                    <View style={styles.moreRow}>
+                      <Text style={styles.moreText}>{isOpen ? 'Show less' : 'Show more'}</Text>
+                      <Ionicons
+                        name={isOpen ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color="#6B8E4E"
+                      />
+                    </View>
                   )}
                 </View>
-                <Text style={styles.entryText} numberOfLines={4}>
-                  {cleanPreview(entry.text) || '(empty entry)'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          ))
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
 
@@ -409,7 +461,13 @@ const styles = StyleSheet.create({
   timeColumn: { width: 78, paddingRight: 8 },
   timeText: { fontSize: 13, fontWeight: '700', color: '#7B5E7B' },
   entryBody: { flex: 1 },
-  sectionTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
+  entryTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  editButton: { paddingLeft: 8 },
+  sectionTag: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  photo: { width: 96, height: 96, borderRadius: 12, backgroundColor: '#E5E0D8' },
+  moreRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
+  moreText: { fontSize: 12, fontWeight: '700', color: '#6B8E4E' },
   sectionTagText: { fontSize: 12, color: '#6B8E4E', fontWeight: '600', flexShrink: 1 },
   imageCount: { fontSize: 12, color: '#7B5E7B' },
   entryText: { fontSize: 14, lineHeight: 20, color: '#4A403A' },

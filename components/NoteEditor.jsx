@@ -13,6 +13,7 @@ import {
   Alert,
   Image,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -37,6 +38,7 @@ const Stepper = ({ value, onDec, onInc, onDecLong, onIncLong, width = 44 }) => (
 
 export default function NoteEditor({ visible, day, note, onSave, onDelete, onClose }) {
   const isEdit = !!note;
+  const { height: screenHeight } = useWindowDimensions();
   const [text, setText] = useState('');
   const [hour12, setHour12] = useState(12);
   const [minute, setMinute] = useState(0);
@@ -152,7 +154,7 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
           </View>
 
           <TextInput
-            style={styles.input}
+            style={[styles.input, { maxHeight: Math.round(screenHeight * 0.38) }]}
             value={text}
             onChangeText={setText}
             placeholder="What happened on this day?"
@@ -250,7 +252,6 @@ const styles = StyleSheet.create({
   input: {
     marginTop: 14,
     minHeight: 130,
-    maxHeight: 200,
     backgroundColor: '#fff',
     borderRadius: 14,
     padding: 14,
