@@ -42,3 +42,15 @@ export const MOODS = [
 ];
 
 export const getMood = (id) => MOODS.find((m) => m.id === id) || null;
+
+// Overall tone of each mood, used for the mood balance report.
+const TONE_BY_ID = {
+  happy: 'up', excited: 'up', loved: 'up', grateful: 'up', proud: 'up', celebrating: 'up',
+  fun: 'up', cozy: 'up', motivated: 'up', hopeful: 'up', calm: 'up', determined: 'up', focused: 'up',
+  neutral: 'mid', thinking: 'mid', nervous: 'mid', bored: 'mid', tired: 'mid',
+  overwhelmed: 'down', disappointed: 'down', emotional: 'down', sad: 'down', crying: 'down',
+  numb: 'down', burnout: 'down', anxious: 'down', scared: 'down', frustrated: 'down', angry: 'down', sick: 'down',
+};
+
+/** 'up' | 'mid' | 'down' (unknown ids count as 'mid') */
+export const getTone = (id) => TONE_BY_ID[id] || 'mid';

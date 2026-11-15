@@ -2,21 +2,23 @@
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Animated, Alert } from 'react-native';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
 import { useObserve } from 'expo-observe';
 import Sidebar from '../components/Sidebar';
 import BackupButton from '../components/BackupButton';
 import AISearch from '../components/AISearch';
+import DashboardReports from '../components/DashboardReports';
 import { useDiarySections } from '../hooks/useDiaryStorage';
 import { useDiaryCalendar } from '../hooks/useDiaryCalendar';
 import { toDateKey, computeStreak, lastNDays } from '../utils/diaryDates';
 import { getRandomQuote } from '../utils/maomaoQuotes';
 
 export default function Home() {
+  const router = useRouter();
   const sidebarRefreshRef = useRef(null);
   const { sections, refreshSections } = useDiarySections();
   // Reloads on every focus, so notes added on the calendar page show up here
-  const { entriesByDay, totalEntries, splitStatus, undoTimeSplit, refresh: refreshCalendar } =
+  const { entriesByDay, totalEntries, titles, splitStatus, undoTimeSplit, refresh: refreshCalendar } =
     useDiaryCalendar();
   const [greeting, setGreeting] = useState('');
   const [currentQuote, setCurrentQuote] = useState({ text: '', context: '' });
@@ -205,6 +207,13 @@ export default function Home() {
               ))}
             </View>
           </View>
+
+          {/* Visual reports: overview, activity heatmap & time of day, moods */}
+          <DashboardReports
+            entriesByDay={entriesByDay}
+            titles={titles}
+            onOpenDay={(key) => router.push({ pathname: '/calendar', params: { date: key } })}
+          />
 
           {/* Maomao's Quote of the Moment */}
           <View style={styles.quoteCard}>

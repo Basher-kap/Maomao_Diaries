@@ -1,7 +1,7 @@
 // app/calendar.jsx — Calendar page.
 // Tap a day, write a note on it. Notes are filed in the month's section, so the
 // dashboard, sidebar sections, backup and AI search all see them.
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -12,7 +12,7 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import NoteEditor from '../components/NoteEditor';
 import { useDiaryCalendar } from '../hooks/useDiaryCalendar';
@@ -34,6 +34,7 @@ const fullTextOf = (text) =>
 
 export default function CalendarPage() {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const { entriesByDay, totalEntries, titles, setDayTitle, isLoading, addNote, updateNote, deleteNote } =
     useDiaryCalendar();
 
@@ -48,6 +49,17 @@ export default function CalendarPage() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const titleKeyRef = useRef(null); // the day being titled, even if the selection changes mid-edit
+
+  // Opened from a dashboard report: jump to that day
+  useEffect(() => {
+    const raw = Array.isArray(params.date) ? params.date[0] : params.date;
+    if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [y, m] = raw.split('-').map(Number);
+      setViewYear(y);
+      setViewMonth(m - 1);
+      setSelectedKey(raw);
+    }
+  }, [params.date]);
 
   const cells = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
   const monthCount = useMemo(
