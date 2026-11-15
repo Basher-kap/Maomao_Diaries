@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatLongDate, withTime } from '../utils/diaryDates';
 import { persistPickedImage, deletePersistedImage } from '../utils/imageStorage';
+import { MOODS, getMood } from '../utils/moods';
 
 // Photos sit inside the text as ⟦img:filename⟧ markers (same format as the section screen)
 const imageIdFromUri = (uri) => uri.split('/').pop();
@@ -59,6 +60,7 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
   const [minute, setMinute] = useState(0);
   const [pm, setPm] = useState(false);
   const [images, setImages] = useState([]);
+  const [mood, setMood] = useState(null);
   const [sessionAdded, setSessionAdded] = useState([]);
 
   useEffect(() => {
@@ -67,6 +69,7 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
     const h24 = base.getHours();
     setText(note ? note.text : '');
     setImages(note ? note.images || [] : []);
+    setMood(note ? note.mood || null : null);
     setSessionAdded([]);
     setPm(h24 >= 12);
     setHour12(h24 % 12 || 12);
@@ -96,7 +99,7 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
     }
     const h24 = (hour12 % 12) + (pm ? 12 : 0);
     const seconds = isEdit ? new Date(note.timestamp).getSeconds() : new Date().getSeconds();
-    onSave(trimmed, withTime(day, h24, minute, seconds), images);
+    onSave(trimmed, withTime(day, h24, minute, seconds), images, mood);
   };
 
   // Cancel: throw away photos that were added in this editor but never saved
@@ -195,6 +198,38 @@ export default function NoteEditor({ visible, day, note, onSave, onDelete, onClo
             autoFocus
             textAlignVertical="top"
           />
+
+          {/* Mood */}
+          <View style={styles.moodHeader}>
+            <Text style={styles.moodTitle}>
+              {mood ? `Feeling ${getMood(mood)?.label?.toLowerCase() ?? ''}` : 'How are you feeling?'}
+            </Text>
+            {mood && (
+              <TouchableOpacity onPress={() => setMood(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.moodClear}>Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={styles.moodStrip}
+          >
+            {MOODS.map((m) => {
+              const active = m.id === mood;
+              return (
+                <TouchableOpacity
+                  key={m.id}
+                  onPress={() => setMood(active ? null : m.id)}
+                  style={[styles.moodChip, active && styles.moodChipActive]}
+                  accessibilityLabel={m.label}
+                >
+                  <Text style={styles.moodEmoji}>{m.emoji}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
           {/* Photos */}
           <View style={styles.photoHeader}>
@@ -309,6 +344,23 @@ const styles = StyleSheet.create({
   ampmBtnActive: { backgroundColor: '#6B8E4E' },
   ampmText: { fontWeight: '700', color: '#7B5E7B' },
   ampmTextActive: { color: '#fff' },
+  moodHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  moodTitle: { fontSize: 13, fontWeight: '700', color: '#7B5E7B' },
+  moodClear: { fontSize: 12, fontWeight: '700', color: '#C0392B' },
+  moodStrip: { marginTop: 8, flexGrow: 0 },
+  moodChip: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    marginRight: 8,
+    backgroundColor: '#EDE7F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  moodChipActive: { backgroundColor: '#E8F5E9', borderColor: '#6B8E4E' },
+  moodEmoji: { fontSize: 24 },
   photoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
   photoAddBtn: {
     flexDirection: 'row',

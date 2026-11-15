@@ -51,6 +51,7 @@ export const useDiaryCalendar = () => {
           section: item.section, // null = calendar note, string = special section
           text: item.text || '',
           images: item.images || [],
+          mood: item.mood || null,
           imageCount: (item.images || []).length,
           timestamp: date.getTime(),
           time: formatTime(date),
@@ -98,14 +99,14 @@ export const useDiaryCalendar = () => {
     await load();
   };
 
-  const addNote = async (when, text, images = []) => {
-    await addCalendarNote(AsyncStorage, when, text, images);
+  const addNote = async (when, text, images = [], mood = null) => {
+    await addCalendarNote(AsyncStorage, when, text, images, mood);
     Observe.logEvent('diary.entry_created', { attributes: { source: 'calendar' } });
     await load();
   };
 
-  const updateNote = async (entry, text, when, images = []) => {
-    await updateEntry(AsyncStorage, entry, text, when, images);
+  const updateNote = async (entry, text, when, images = [], mood = null) => {
+    await updateEntry(AsyncStorage, entry, text, when, images, mood);
     // photos the user removed while editing
     const removed = (entry.images || []).filter((u) => !images.includes(u));
     await deletePersistedImages(await findOrphans(AsyncStorage, removed));

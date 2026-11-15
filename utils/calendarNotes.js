@@ -240,7 +240,7 @@ export const getCalendarImages = async (storage) =>
 // ---------------------------------------------------------------------- CRUD
 
 /** Add a note stamped with `when` (the calendar day + chosen time). */
-export const addCalendarNote = async (storage, when, text, images = []) => {
+export const addCalendarNote = async (storage, when, text, images = [], mood = null) => {
   const notes = await readJson(storage, KEYS.CALENDAR, []);
   let id = Date.now();
   while (notes.some((n) => n.id === id)) id += 1;
@@ -251,6 +251,7 @@ export const addCalendarNote = async (storage, when, text, images = []) => {
     images,
     createdAt: formatLocaleString(when),
     lastModified: formatLocaleString(new Date()),
+    ...(mood ? { mood } : {}),
   };
   await saveCalendar(storage, [note, ...notes]);
   return note;
@@ -260,14 +261,18 @@ export const addCalendarNote = async (storage, when, text, images = []) => {
  * Update text / time / photos of an entry. `entry.section` is null for calendar
  * notes, or the section name for special-section entries.
  */
-export const updateEntry = async (storage, entry, text, when, images) => {
-  const patch = (it) => ({
-    ...it,
-    text,
-    images,
-    createdAt: formatLocaleString(when),
-    lastModified: formatLocaleString(new Date()),
-  });
+export const updateEntry = async (storage, entry, text, when, images, mood = null) => {
+  const patch = (it) => {
+    const { mood: _old, ...rest } = it;
+    return {
+      ...rest,
+      text,
+      images,
+      createdAt: formatLocaleString(when),
+      lastModified: formatLocaleString(new Date()),
+      ...(mood ? { mood } : {}), // no mood chosen = mood removed
+    };
+  };
 
   if (entry.section) {
     const items = await readJson(storage, KEYS.ITEMS + entry.section, []);

@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import NoteEditor from '../components/NoteEditor';
 import { useDiaryCalendar } from '../hooks/useDiaryCalendar';
+import { getMood } from '../utils/moods';
 import {
   MONTH_NAMES,
   WEEKDAY_SHORT,
@@ -106,12 +107,12 @@ export default function CalendarPage() {
     setEditorOpen(true);
   };
 
-  const handleSave = async (text, when, images) => {
+  const handleSave = async (text, when, images, mood) => {
     try {
       if (editingNote) {
-        await updateNote(editingNote, text, when, images);
+        await updateNote(editingNote, text, when, images, mood);
       } else {
-        await addNote(when, text, images);
+        await addNote(when, text, images, mood);
       }
       setEditorOpen(false);
     } catch (e) {
@@ -281,6 +282,11 @@ export default function CalendarPage() {
               >
                 <View style={styles.timeColumn}>
                   <Text style={styles.timeText}>{entry.time}</Text>
+                  {getMood(entry.mood) && (
+                    <Text style={styles.moodBadge} accessibilityLabel={getMood(entry.mood).label}>
+                      {getMood(entry.mood).emoji}
+                    </Text>
+                  )}
                 </View>
                 <View style={styles.entryBody}>
                   <View style={styles.entryTopRow}>
@@ -460,6 +466,7 @@ const styles = StyleSheet.create({
   },
   timeColumn: { width: 78, paddingRight: 8 },
   timeText: { fontSize: 13, fontWeight: '700', color: '#7B5E7B' },
+  moodBadge: { fontSize: 24, marginTop: 6 },
   entryBody: { flex: 1 },
   entryTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   editButton: { paddingLeft: 8 },

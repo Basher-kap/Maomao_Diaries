@@ -13,6 +13,7 @@ import {
   Platform,
   Animated,
 } from 'react-native';
+import { getMood } from '../utils/moods';
 import { useState, useRef } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -60,7 +61,8 @@ export default function AISearch({ sections = [] }) {
     if (calNotes.length) {
       parts.push('=== Calendar notes ===');
       calNotes.forEach(item => {
-        parts.push(`[Date: ${item.createdAt || item.lastModified}] Entry: ${item.text}`);
+        const mood = getMood(item.mood);
+        parts.push(`[Date: ${item.createdAt || item.lastModified}]${mood ? ` [Mood: ${mood.label}]` : ''} Entry: ${item.text}`);
       });
     }
     const migRaw = await AsyncStorage.getItem('@calendar_migrated');
